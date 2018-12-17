@@ -119,19 +119,75 @@ int main(int argc, const char* argv[]) {
         }
         break;
       case OP_AND:
-        {AND, 7}
+        {
+          /* destination register (DR) */
+          uint16_t r0 = (instr >> 9) & 0x7;
+          /* first operand (SR1) */
+          uint16_t r1 = (instr >> 6) & 0x7;
+          /* whether we are in immediate mode */
+          uint16_t imm_flag = (instr >> 5) & 0x1;
+
+          if (imm_flag) {
+            uint16_t imm5 = sign_extend(instr & 0x1F, 5);
+            reg[r0] = reg[r1] & imm5;
+          }
+          else {
+            uint16_t r2 = instr & 0x7;
+            reg[r0] = reg[r1] & reg[r2];
+          }
+        }
         break;
       case OP_NOT:
         {NOT, 7}
         break;
       case OP_BR:
-        {BR, 7}
+        {
+          uint16_t n_flag = (instr >> 11) & 0x1;
+          uint16_t z_flag = (instr >> 10) & 0x1;
+          uint16_t p_flag = (instr >> 9) & 0x1;
+
+          /* PCoffset 9 */
+          uint16_t pc_offset = sign_extend(instr & 0x1ff, 9);
+
+          /* advance program counter if one of the following is true:
+           * - n_flag is set and negative condition flag is set
+           * - z_flag is set and zero condition flag is set
+           * - p_flag is set and positive condition flag is set */
+          if ((n_flag && (reg[R_COND] & FL_NEG)) ||
+              (z_flag && (reg[R_COND] & FL_ZRO)) ||
+              (p_flag && (reg[R_COND] & FL_POS))) {
+
+            reg[R_PC] += pc_offset;
+          }
+        }
         break;
       case OP_JMP:
-        {JMP, 7}
+        {
+          uint16_t base_r = (instr >> 6) & 0x7;
+          reg[R_PC] = reg[base_r];
+        }
         break;
       case OP_JSR:
-        {JSR, 7}
+        {
+          /* save PC in R7 to jump back to later */
+          reg[R_R7] = reg[R_PC];
+
+          /* whether we are in immediate mode */
+          uint16_t imm_flag = (instr >> 11) & 0x1;
+
+          if (imm_flag) {
+            /* PCoffset 11 */
+            uint16_t pc_offset = sign_extend(instr & 0x3ff, 11);
+
+            /* add offset to program counter */
+            reg[R_PC] += pc_offset;
+          }
+          else {
+            /* assign contents of base register directly to program counter */
+            uint16_t base_r = (instr >> 6) & 0x7;
+            reg[R_PC] = reg[base_r];
+          }
+        }
         break;
       case OP_LD:
         {LD, 7}
