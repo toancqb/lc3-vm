@@ -57,6 +57,17 @@ enum {
   FL_NEG = 1 << 2, /* N */
 };
 
+/* trap codes */
+enum
+{
+  TRAP_GETC = 0x20,  /* get character from keyboard */
+  TRAP_OUT = 0x21,   /* output a character */
+  TRAP_PUTS = 0x22,  /* output a word string */
+  TRAP_IN = 0x23,    /* input a string */
+  TRAP_PUTSP = 0x24, /* output a byte string */
+  TRAP_HALT = 0x25   /* halt the program */
+};
+
 /* convert small bit number to 16-bit, keeping sign bit intact */
 uint16_t sign_extend(uint16_t x, int bit_count) {
   if ((x >> (bit_count - 1)) & 1) {
@@ -95,50 +106,59 @@ int main(int argc, const char* argv[]) {
     uint16_t instr = mem_read(reg[R_PC]++);
     uint16_t op = instr >> 12;
 
-    switch (op)
-    {
+    switch (op) {
       case OP_ADD:
         {
           /* destination register (DR) */
-          uint16_t r0 = (instr >> 9) & 0x7;
+          uint16_t dr = (instr >> 9) & 0x7;
           /* first operand (SR1) */
-          uint16_t r1 = (instr >> 6) & 0x7;
+          uint16_t sr1 = (instr >> 6) & 0x7;
           /* whether we are in immediate mode */
           uint16_t imm_flag = (instr >> 5) & 0x1;
 
           if (imm_flag) {
-            uint16_t imm5 = sign_extend(instr & 0x1F, 5);
-            reg[r0] = reg[r1] + imm5;
+            uint16_t imm5 = sign_extend(instr & 0x1f, 5);
+            reg[dr] = reg[sr1] + imm5;
           }
           else {
-            uint16_t r2 = instr & 0x7;
-            reg[r0] = reg[r1] + reg[r2];
+            uint16_t sr2 = instr & 0x7;
+            reg[dr] = reg[sr1] + reg[sr2];
           }
 
-          update_flags(r0);
+          update_flags(dr);
         }
         break;
       case OP_AND:
         {
           /* destination register (DR) */
-          uint16_t r0 = (instr >> 9) & 0x7;
+          uint16_t dr = (instr >> 9) & 0x7;
           /* first operand (SR1) */
-          uint16_t r1 = (instr >> 6) & 0x7;
+          uint16_t sr1 = (instr >> 6) & 0x7;
           /* whether we are in immediate mode */
           uint16_t imm_flag = (instr >> 5) & 0x1;
 
           if (imm_flag) {
-            uint16_t imm5 = sign_extend(instr & 0x1F, 5);
-            reg[r0] = reg[r1] & imm5;
+            uint16_t imm5 = sign_extend(instr & 0x1f, 5);
+            reg[dr] = reg[sr1] & imm5;
           }
           else {
-            uint16_t r2 = instr & 0x7;
-            reg[r0] = reg[r1] & reg[r2];
+            uint16_t sr2 = instr & 0x7;
+            reg[dr] = reg[sr1] & reg[sr2];
           }
+          update_flags(dr);
         }
         break;
       case OP_NOT:
-        {NOT, 7}
+        {
+          /* destination register (DR) */
+          uint16_t dr = (instr >> 9) & 0x7;
+
+          /* source register (SR) */
+          uint16_t sr = (instr >> 6) & 0x7;
+
+          reg[dr] = ~reg[sr];
+          update_flags(dr);
+        }
         break;
       case OP_BR:
         {
@@ -177,7 +197,7 @@ int main(int argc, const char* argv[]) {
 
           if (imm_flag) {
             /* PCoffset 11 */
-            uint16_t pc_offset = sign_extend(instr & 0x3ff, 11);
+            uint16_t pc_offset = sign_extend(instr & 0x7ff, 11);
 
             /* add offset to program counter */
             reg[R_PC] += pc_offset;
@@ -190,45 +210,129 @@ int main(int argc, const char* argv[]) {
         }
         break;
       case OP_LD:
-        {LD, 7}
+        {
+          /* destination register (DR) */
+          uint16_t dr = (instr >> 9) & 0x7;
+
+          /* PCoffset 9 */
+          uint16_t pc_offset = sign_extend(instr & 0x1ff, 9);
+
+          /* add pc_offset to the current PC and load that memory location */
+          reg[dr] = mem_read(reg[R_PC] + pc_offset);
+          update_flags(dr);
+        }
         break;
       case OP_LDI:
         {
           /* destination register (DR) */
-          uint16_t r0 = (instr >> 9) & 0x7;
+          uint16_t dr = (instr >> 9) & 0x7;
 
           /* PCoffset 9 */
           uint16_t pc_offset = sign_extend(instr & 0x1ff, 9);
 
           /* add pc_offset to the current PC, look at that memory location to
            * get the final address */
-          reg[r0] = mem_read(mem_read(reg[R_PC] + pc_offset));
-          update_flags(r0);
+          reg[dr] = mem_read(mem_read(reg[R_PC] + pc_offset));
+          update_flags(dr);
         }
         break;
       case OP_LDR:
-        {LDR, 7}
+        {
+          /* destination register (DR) */
+          uint16_t dr = (instr >> 9) & 0x7;
+
+          /* base register (BaseR) */
+          uint16_t base_r = (instr >> 6) & 0x7;
+
+          /* offset 6 */
+          uint16_t offset = sign_extend(instr & 0x3f, 6);
+
+          reg[dr] = mem_read(reg[base_r] + offset);
+          update_flags(dr);
+        }
         break;
       case OP_LEA:
-        {LEA, 7}
+        {
+          /* destination register (DR) */
+          uint16_t dr = (instr >> 9) & 0x7;
+
+          /* PCoffset 9 */
+          uint16_t pc_offset = sign_extend(instr & 0x1ff, 9);
+
+          reg[dr] = reg[R_PC] + pc_offset;
+          update_flags(dr);
+        }
         break;
       case OP_ST:
-        {ST, 7}
+        {
+          /* source register (SR) */
+          uint16_t sr = (instr >> 9) & 0x7;
+
+          /* PCoffset 9 */
+          uint16_t pc_offset = sign_extend(instr & 0x1ff, 9);
+
+          mem_write(reg[R_PC] + pc_offset, reg[sr]);
+        }
         break;
       case OP_STI:
-        {STI, 7}
+        {
+          /* source register (SR) */
+          uint16_t sr = (instr >> 9) & 0x7;
+
+          /* PCoffset 9 */
+          uint16_t pc_offset = sign_extend(instr & 0x1ff, 9);
+
+          mem_write(mem_read(reg[R_PC] + pc_offset), reg[sr]);
+        }
         break;
       case OP_STR:
-        {STR, 7}
+        {
+          /* source register (DR) */
+          uint16_t sr = (instr >> 9) & 0x7;
+
+          /* base register (BaseR) */
+          uint16_t base_r = (instr >> 6) & 0x7;
+
+          /* offset 6 */
+          uint16_t offset = sign_extend(instr & 0x3f, 6);
+
+          mem_write(reg[base_r] + offset, reg[sr]);
+        }
         break;
       case OP_TRAP:
-        {TRAP, 8}
+        switch (instr & 0xFF) {
+          case TRAP_GETC:
+            {TRAP GETC, 9}
+            break;
+          case TRAP_OUT:
+            {TRAP OUT, 9}
+            break;
+          case TRAP_PUTS:
+            {
+              /* one char per word */
+              uint16_t *c = memory + reg[R_R0];
+              while (*c) {
+                putc((char)*c, stdout);
+                ++c;
+              }
+              fflush(stdout);
+            }
+            break;
+          case TRAP_IN:
+            {TRAP IN, 9}
+            break;
+          case TRAP_PUTSP:
+            {TRAP PUTSP, 9}
+            break;
+          case TRAP_HALT:
+            {TRAP HALT, 9}
+            break;
+        }
         break;
       case OP_RES:
       case OP_RTI:
       default:
-        {BAD OPCODE, 7}
-        break;
+        abort();
     }
   }
 
