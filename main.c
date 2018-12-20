@@ -539,7 +539,9 @@ int run_tests() {
 
   if (ok) {
     printf("All tests passed!\n");
+    return 0;
   }
+  return 1;
 }
 
 /* main program */
