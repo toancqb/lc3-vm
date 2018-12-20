@@ -491,7 +491,7 @@ int test_add_instr_2() {
     ((OP_ADD & 0xf) << 12) |
     ((R_R0 & 0x7) << 9)    |
     ((R_R1 & 0x7) << 6)    |
-    0x10 |
+    (1 << 5) |
     0x2;
 
   memory[0x3000] = add_instr;
@@ -516,10 +516,76 @@ int test_add_instr_2() {
   return pass;
 }
 
+int test_and_instr_1() {
+  int pass = 1;
+
+  uint16_t and_instr =
+    ((OP_AND & 0xf) << 12) |
+    ((R_R0 & 0x7) << 9)    |
+    ((R_R1 & 0x7) << 6)    |
+    (R_R2 & 0x7);
+
+  memory[0x3000] = and_instr;
+  reg[R_R1] = 0xff;
+  reg[R_R2] = 0xf0;
+
+  int result = read_and_execute_instruction();
+  if (result != 1) {
+    printf("Expected return value to be 1, got %d\n", result);
+    pass = 0;
+  }
+
+  if (reg[R_R0] != 0xf0) {
+    printf("Expected register 0 to contain %d, got %d\n", 0xf0, reg[R_R0]);
+    pass = 0;
+  }
+
+  if (reg[R_COND] != FL_POS) {
+    printf("Expected condition flags to be %d, got %d\n", FL_POS, reg[R_COND]);
+    pass = 0;
+  }
+
+  return pass;
+}
+
+int test_and_instr_2() {
+  int pass = 1;
+
+  uint16_t and_instr =
+    ((OP_AND & 0xf) << 12) |
+    ((R_R0 & 0x7) << 9)    |
+    ((R_R1 & 0x7) << 6)    |
+    (1 << 5) |
+    0x0f;
+
+  memory[0x3000] = and_instr;
+  reg[R_R1] = 0xff;
+
+  int result = read_and_execute_instruction();
+  if (result != 1) {
+    printf("Expected return value to be 1, got %d\n", result);
+    pass = 0;
+  }
+
+  if (reg[R_R0] != 0x0f) {
+    printf("Expected register 0 to contain %d, got %d\n", 0x0f, reg[R_R0]);
+    pass = 0;
+  }
+
+  if (reg[R_COND] != FL_POS) {
+    printf("Expected condition flags to be %d, got %d\n", FL_POS, reg[R_COND]);
+    pass = 0;
+  }
+
+  return pass;
+}
+
 int run_tests() {
   int (*tests[])(void) = {
     test_add_instr_1,
     test_add_instr_2,
+    test_and_instr_1,
+    test_and_instr_2,
     NULL
   };
 
