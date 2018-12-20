@@ -636,7 +636,7 @@ int test_br_instr_1() {
   }
 
   if (reg[R_PC] != 0x3001) {
-    printf("Expected program counter to be %d, got %d\n", 0x3001, reg[R_PC]);
+    printf("Expected program counter to contain %d, got %d\n", 0x3001, reg[R_PC]);
     pass = 0;
   }
 
@@ -661,7 +661,7 @@ int test_br_instr_2() {
   }
 
   if (reg[R_PC] != 0x3100) {
-    printf("Expected program counter to be %d, got %d\n", 0x3100, reg[R_PC]);
+    printf("Expected program counter to contain %d, got %d\n", 0x3100, reg[R_PC]);
     pass = 0;
   }
 
@@ -686,7 +686,7 @@ int test_br_instr_3() {
   }
 
   if (reg[R_PC] != 0x3100) {
-    printf("Expected program counter to be %d, got %d\n", 0x3100, reg[R_PC]);
+    printf("Expected program counter to contain %d, got %d\n", 0x3100, reg[R_PC]);
     pass = 0;
   }
 
@@ -711,7 +711,7 @@ int test_br_instr_4() {
   }
 
   if (reg[R_PC] != 0x3100) {
-    printf("Expected program counter to be %d, got %d\n", 0x3100, reg[R_PC]);
+    printf("Expected program counter to contain %d, got %d\n", 0x3100, reg[R_PC]);
     pass = 0;
   }
 
@@ -735,7 +735,65 @@ int test_jmp_instr() {
   }
 
   if (reg[R_PC] != 0x1234) {
-    printf("Expected program counter to be %d, got %d\n", 0x1234, reg[R_PC]);
+    printf("Expected program counter to contain %d, got %d\n", 0x1234, reg[R_PC]);
+    pass = 0;
+  }
+
+  return pass;
+}
+
+int test_jsr_instr_1() {
+  int pass = 1;
+
+  uint16_t jsr_instr =
+    ((OP_JSR & 0xf) << 12) |
+    (1 << 11) |
+    0xff;
+
+  memory[0x3000] = jsr_instr;
+
+  int result = read_and_execute_instruction();
+  if (result != 1) {
+    printf("Expected return value to be 1, got %d\n", result);
+    pass = 0;
+  }
+
+  if (reg[R_PC] != 0x3100) {
+    printf("Expected program counter to contain %d, got %d\n", 0x3100, reg[R_PC]);
+    pass = 0;
+  }
+
+  if (reg[R_R7] != 0x3001) {
+    printf("Expected register 7 to contain %d, got %d\n", 0x3001, reg[R_R7]);
+    pass = 0;
+  }
+
+  return pass;
+}
+
+int test_jsr_instr_2() {
+  int pass = 1;
+
+  uint16_t jsr_instr =
+    ((OP_JSR & 0xf) << 12) |
+    ((R_R0 & 0x7) << 6);
+
+  memory[0x3000] = jsr_instr;
+  reg[R_R0] = 0x1234;
+
+  int result = read_and_execute_instruction();
+  if (result != 1) {
+    printf("Expected return value to be 1, got %d\n", result);
+    pass = 0;
+  }
+
+  if (reg[R_PC] != 0x1234) {
+    printf("Expected program counter to contain %d, got %d\n", 0x1234, reg[R_PC]);
+    pass = 0;
+  }
+
+  if (reg[R_R7] != 0x3001) {
+    printf("Expected register 7 to contain %d, got %d\n", 0x3001, reg[R_R7]);
     pass = 0;
   }
 
@@ -754,6 +812,8 @@ int run_tests() {
     test_br_instr_3,
     test_br_instr_4,
     test_jmp_instr,
+    test_jsr_instr_1,
+    test_jsr_instr_2,
     NULL
   };
 
