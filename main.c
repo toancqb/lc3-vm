@@ -586,12 +586,44 @@ int test_and_instr_2() {
   return pass;
 }
 
+int test_not_instr() {
+  int pass = 1;
+
+  uint16_t not_instr =
+    ((OP_NOT & 0xf) << 12) |
+    ((R_R0 & 0x7) << 9)    |
+    ((R_R1 & 0x7) << 6)    |
+    0x3f;
+
+  memory[0x3000] = not_instr;
+  reg[R_R1] = 0xf;
+
+  int result = read_and_execute_instruction();
+  if (result != 1) {
+    printf("Expected return value to be 1, got %d\n", result);
+    pass = 0;
+  }
+
+  if (reg[R_R0] != 0xfff0) {
+    printf("Expected register 0 to contain %d, got %d\n", 0xfff0, reg[R_R0]);
+    pass = 0;
+  }
+
+  if (reg[R_COND] != FL_NEG) {
+    printf("Expected condition flags to be %d, got %d\n", FL_NEG, reg[R_COND]);
+    pass = 0;
+  }
+
+  return pass;
+}
+
 int run_tests() {
   int (*tests[])(void) = {
     test_add_instr_1,
     test_add_instr_2,
     test_and_instr_1,
     test_and_instr_2,
+    test_not_instr,
     NULL
   };
 
