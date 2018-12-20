@@ -68,6 +68,12 @@ enum
   TRAP_HALT = 0x25   /* halt the program */
 };
 
+/* memory mapped registers */
+enum {
+  MR_KBSR = 0xFE00, /* keyboard status */
+  MR_KBDR = 0xFE02  /* keyboard data */
+};
+
 /* convert small bit number to 16-bit, keeping sign bit intact */
 uint16_t sign_extend(uint16_t x, int bit_count) {
   if ((x >> (bit_count - 1)) & 1) {
@@ -90,9 +96,106 @@ void update_flags(uint16_t r) {
   }
 }
 
+/* change endianness */
+uint16_t swap16(uint16_t x) {
+    return (x << 8) | (x >> 8);
+}
+
+/* load program into memory from a file */
+void read_image_file(FILE *file) {
+  /* the origin tells us where in memory to place the image */
+  uint16_t origin;
+  fread(&origin, sizeof(origin), 1, file);
+  origin = swap16(origin);
+
+  /* we know the maximum file size so we only need one fread */
+  uint16_t max_read = UINT16_MAX - origin;
+  uint16_t *p = memory + origin;
+  size_t read = fread(p, sizeof(uint16_t), max_read, file);
+
+  /* swap to little endian */
+  while (read-- > 0) {
+    *p = swap16(*p);
+    ++p;
+  }
+}
+
+int read_image(const char* image_path) {
+  FILE *file = fopen(image_path, "rb");
+  if (!file) { return 0; };
+  read_image_file(file);
+  fclose(file);
+  return 1;
+}
+
+/* get keyboard status */
+uint16_t check_key() {
+  fd_set readfds;
+  FD_ZERO(&readfds);
+  FD_SET(STDIN_FILENO, &readfds);
+
+  struct timeval timeout;
+  timeout.tv_sec = 0;
+  timeout.tv_usec = 0;
+  return select(1, &readfds, NULL, NULL, &timeout) != 0;
+}
+
+/* memory access */
+void mem_write(uint16_t address, uint16_t val) {
+  memory[address] = val;
+}
+
+uint16_t mem_read(uint16_t address) {
+  /* reading the memory mapped keyboard register triggers a key check */
+  if (address == MR_KBSR) {
+    if (check_key()) {
+      memory[MR_KBSR] = (1 << 15);
+      memory[MR_KBDR] = getchar();
+    }
+    else {
+      memory[MR_KBSR] = 0;
+    }
+  }
+  return memory[address];
+}
+
+/* terminal input setup */
+struct termios original_tio;
+
+void disable_input_buffering() {
+  tcgetattr(STDIN_FILENO, &original_tio);
+  struct termios new_tio = original_tio;
+  new_tio.c_lflag &= ~ICANON & ~ECHO;
+  tcsetattr(STDIN_FILENO, TCSANOW, &new_tio);
+}
+
+void restore_input_buffering() {
+  tcsetattr(STDIN_FILENO, TCSANOW, &original_tio);
+}
+
+void handle_interrupt(int signal) {
+  restore_input_buffering();
+  printf("\n");
+  exit(-2);
+}
+
+/* main program */
 int main(int argc, const char* argv[]) {
-  {Load Arguments, 12}
-  {Setup, 12}
+  if (argc < 2) {
+    /* show usage string */
+    printf("lc3 --test | [image-file1] ...\n");
+    exit(2);
+  }
+
+  for (int j = 1; j < argc; ++j) {
+    if (!read_image(argv[j])) {
+      printf("failed to load image: %s\n", argv[j]);
+      exit(1);
+    }
+  }
+
+  signal(SIGINT, handle_interrupt);
+  disable_input_buffering();
 
   /* set the PC to starting position */
   /* 0x3000 is the default */
@@ -100,8 +203,7 @@ int main(int argc, const char* argv[]) {
   reg[R_PC] = PC_START;
 
   int running = 1;
-  while (running)
-  {
+  while (running) {
     /* FETCH */
     uint16_t instr = mem_read(reg[R_PC]++);
     uint16_t op = instr >> 12;
@@ -302,30 +404,62 @@ int main(int argc, const char* argv[]) {
       case OP_TRAP:
         switch (instr & 0xFF) {
           case TRAP_GETC:
-            {TRAP GETC, 9}
+            {
+              uint16_t c = getc(stdin);
+              reg[R_R0] = c;
+            }
             break;
           case TRAP_OUT:
-            {TRAP OUT, 9}
+            {
+              char c = (char)reg[R_R0 & 0x8];
+              putc(c, stdout);
+            }
             break;
           case TRAP_PUTS:
             {
               /* one char per word */
-              uint16_t *c = memory + reg[R_R0];
-              while (*c) {
-                putc((char)*c, stdout);
-                ++c;
+              uint16_t *word = memory + reg[R_R0];
+              while (*word) {
+                putc((char)(*word & 0x8), stdout);
+                word++;
               }
               fflush(stdout);
             }
             break;
           case TRAP_IN:
-            {TRAP IN, 9}
+            {
+              fprintf(stdout, "Enter a character: ");
+              fflush(stdout);
+
+              uint16_t c = getc(stdin);
+              putc((char)c, stdout);
+              fflush(stdout);
+
+              reg[R_R0] = c;
+            }
             break;
           case TRAP_PUTSP:
-            {TRAP PUTSP, 9}
+            {
+              /* two chars per word */
+              uint16_t *word = memory + reg[R_R0];
+              while (*word) {
+                putc((char)(*word & 0x8), stdout);
+
+                char c = *word >> 8;
+                if (c) {
+                  putc(c, stdout);
+                }
+                word++;
+              }
+              fflush(stdout);
+            }
             break;
           case TRAP_HALT:
-            {TRAP HALT, 9}
+            {
+              puts("HALT");
+              fflush(stdout);
+              running = 0;
+            }
             break;
         }
         break;
@@ -336,5 +470,5 @@ int main(int argc, const char* argv[]) {
     }
   }
 
-  {Shutdown, 12}
+  restore_input_buffering();
 }
