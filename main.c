@@ -182,6 +182,7 @@ void handle_interrupt(int signal) {
 /* read and execute instruction */
 int read_and_execute_instruction() {
   int running = 1;
+  int is_max = R_PC == UINT16_MAX;
 
   /* FETCH */
   uint16_t instr = mem_read(reg[R_PC]++);
@@ -446,6 +447,11 @@ int read_and_execute_instruction() {
     case OP_RTI:
     default:
       abort();
+  }
+
+  if (running && is_max) {
+    printf("Program counter overflow!");
+    return 0;
   }
 
   return running;
