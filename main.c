@@ -718,6 +718,30 @@ int test_br_instr_4() {
   return pass;
 }
 
+int test_jmp_instr() {
+  int pass = 1;
+
+  uint16_t jmp_instr =
+    ((OP_JMP & 0xf) << 12) |
+    ((R_R0 & 0x7) << 6);
+
+  memory[0x3000] = jmp_instr;
+  reg[R_R0] = 0x1234;
+
+  int result = read_and_execute_instruction();
+  if (result != 1) {
+    printf("Expected return value to be 1, got %d\n", result);
+    pass = 0;
+  }
+
+  if (reg[R_PC] != 0x1234) {
+    printf("Expected program counter to be %d, got %d\n", 0x1234, reg[R_PC]);
+    pass = 0;
+  }
+
+  return pass;
+}
+
 int run_tests() {
   int (*tests[])(void) = {
     test_add_instr_1,
@@ -729,6 +753,7 @@ int run_tests() {
     test_br_instr_2,
     test_br_instr_3,
     test_br_instr_4,
+    test_jmp_instr,
     NULL
   };
 
