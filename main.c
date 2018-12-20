@@ -617,6 +617,107 @@ int test_not_instr() {
   return pass;
 }
 
+int test_br_instr_1() {
+  int pass = 1;
+
+  uint16_t br_instr =
+    ((OP_BR & 0xf) << 12) |
+    (1 << 11) |
+    0x123;
+
+  memory[0x3000] = br_instr;
+
+  /* nothing should happen */
+  reg[R_COND] = 0;
+  int result = read_and_execute_instruction();
+  if (result != 1) {
+    printf("Expected return value to be 1, got %d\n", result);
+    pass = 0;
+  }
+
+  if (reg[R_PC] != 0x3001) {
+    printf("Expected program counter to be %d, got %d\n", 0x3001, reg[R_PC]);
+    pass = 0;
+  }
+
+  return pass;
+}
+
+int test_br_instr_2() {
+  int pass = 1;
+
+  uint16_t br_instr =
+    ((OP_BR & 0xf) << 12) |
+    (1 << 11) |
+    0x0ff;
+
+  memory[0x3000] = br_instr;
+
+  reg[R_COND] = FL_NEG;
+  int result = read_and_execute_instruction();
+  if (result != 1) {
+    printf("Expected return value to be 1, got %d\n", result);
+    pass = 0;
+  }
+
+  if (reg[R_PC] != 0x3100) {
+    printf("Expected program counter to be %d, got %d\n", 0x3100, reg[R_PC]);
+    pass = 0;
+  }
+
+  return pass;
+}
+
+int test_br_instr_3() {
+  int pass = 1;
+
+  uint16_t br_instr =
+    ((OP_BR & 0xf) << 12) |
+    (1 << 10) |
+    0x0ff;
+
+  memory[0x3000] = br_instr;
+
+  reg[R_COND] = FL_ZRO;
+  int result = read_and_execute_instruction();
+  if (result != 1) {
+    printf("Expected return value to be 1, got %d\n", result);
+    pass = 0;
+  }
+
+  if (reg[R_PC] != 0x3100) {
+    printf("Expected program counter to be %d, got %d\n", 0x3100, reg[R_PC]);
+    pass = 0;
+  }
+
+  return pass;
+}
+
+int test_br_instr_4() {
+  int pass = 1;
+
+  uint16_t br_instr =
+    ((OP_BR & 0xf) << 12) |
+    (1 << 9) |
+    0x0ff;
+
+  memory[0x3000] = br_instr;
+
+  reg[R_COND] = FL_POS;
+  int result = read_and_execute_instruction();
+  if (result != 1) {
+    printf("Expected return value to be 1, got %d\n", result);
+    pass = 0;
+  }
+
+  if (reg[R_PC] != 0x3100) {
+    printf("Expected program counter to be %d, got %d\n", 0x3100, reg[R_PC]);
+    pass = 0;
+  }
+
+  return pass;
+}
+
 int run_tests() {
   int (*tests[])(void) = {
     test_add_instr_1,
@@ -624,6 +725,10 @@ int run_tests() {
     test_and_instr_1,
     test_and_instr_2,
     test_not_instr,
+    test_br_instr_1,
+    test_br_instr_2,
+    test_br_instr_3,
+    test_br_instr_4,
     NULL
   };
 
