@@ -179,6 +179,72 @@ void handle_interrupt(int signal) {
   exit(-2);
 }
 
+/* execute trap routine */
+int execute_trap(uint16_t instr, FILE *in, FILE *out) {
+  int running = 1;
+  switch (instr & 0xFF) {
+    case TRAP_GETC:
+      {
+        uint16_t c = getc(in);
+        reg[R_R0] = c;
+      }
+      break;
+    case TRAP_OUT:
+      {
+        char c = (char)reg[R_R0 & 0xff];
+        putc(c, out);
+      }
+      break;
+    case TRAP_PUTS:
+      {
+        /* one char per word */
+        uint16_t *word = memory + reg[R_R0];
+        while (*word) {
+          putc((char)(*word & 0xff), out);
+          word++;
+        }
+        fflush(out);
+      }
+      break;
+    case TRAP_IN:
+      {
+        fprintf(out, "Enter a character: ");
+        fflush(out);
+
+        uint16_t c = getc(in);
+        putc((char)c, out);
+        fflush(out);
+
+        reg[R_R0] = c;
+      }
+      break;
+    case TRAP_PUTSP:
+      {
+        /* two chars per word */
+        uint16_t *word = memory + reg[R_R0];
+        while (*word) {
+          putc((char)(*word & 0xff), out);
+
+          char c = *word >> 8;
+          if (c) {
+            putc(c, out);
+          }
+          word++;
+        }
+        fflush(out);
+      }
+      break;
+    case TRAP_HALT:
+      {
+        fputs("HALT", out);
+        fflush(out);
+        running = 0;
+      }
+      break;
+  }
+  return running;
+}
+
 /* read and execute instruction */
 int read_and_execute_instruction() {
   int running = 1;
@@ -382,66 +448,7 @@ int read_and_execute_instruction() {
       }
       break;
     case OP_TRAP:
-      switch (instr & 0xFF) {
-        case TRAP_GETC:
-          {
-            uint16_t c = getc(stdin);
-            reg[R_R0] = c;
-          }
-          break;
-        case TRAP_OUT:
-          {
-            char c = (char)reg[R_R0 & 0x8];
-            putc(c, stdout);
-          }
-          break;
-        case TRAP_PUTS:
-          {
-            /* one char per word */
-            uint16_t *word = memory + reg[R_R0];
-            while (*word) {
-              putc((char)(*word & 0x8), stdout);
-              word++;
-            }
-            fflush(stdout);
-          }
-          break;
-        case TRAP_IN:
-          {
-            fprintf(stdout, "Enter a character: ");
-            fflush(stdout);
-
-            uint16_t c = getc(stdin);
-            putc((char)c, stdout);
-            fflush(stdout);
-
-            reg[R_R0] = c;
-          }
-          break;
-        case TRAP_PUTSP:
-          {
-            /* two chars per word */
-            uint16_t *word = memory + reg[R_R0];
-            while (*word) {
-              putc((char)(*word & 0x8), stdout);
-
-              char c = *word >> 8;
-              if (c) {
-                putc(c, stdout);
-              }
-              word++;
-            }
-            fflush(stdout);
-          }
-          break;
-        case TRAP_HALT:
-          {
-            puts("HALT");
-            fflush(stdout);
-            running = 0;
-          }
-          break;
-      }
+      running = execute_trap(instr, stdin, stdout);
       break;
     case OP_RES:
     case OP_RTI:
@@ -800,6 +807,404 @@ int test_jsr_instr_2() {
   return pass;
 }
 
+int test_ld_instr() {
+  int pass = 1;
+
+  uint16_t ld_instr =
+    ((OP_LD & 0xf) << 12) |
+    ((R_R0 & 0x7) << 9)   |
+    0xff;
+
+  memory[0x3000] = ld_instr;
+  memory[0x3100] = 0x123;
+
+  int result = read_and_execute_instruction();
+  if (result != 1) {
+    printf("Expected return value to be 1, got %d\n", result);
+    pass = 0;
+  }
+
+  if (reg[R_R0] != 0x123) {
+    printf("Expected register 0 to contain %d, got %d\n", 0x123, reg[R_R0]);
+    pass = 0;
+  }
+
+  if (reg[R_COND] != FL_POS) {
+    printf("Expected condition flags to be %d, got %d\n", FL_POS, reg[R_COND]);
+    pass = 0;
+  }
+
+  return pass;
+}
+
+int test_ldi_instr() {
+  int pass = 1;
+
+  uint16_t ldi_instr =
+    ((OP_LDI & 0xf) << 12) |
+    ((R_R0 & 0x7) << 9)   |
+    0xff;
+
+  memory[0x3000] = ldi_instr;
+  memory[0x3100] = 0x3200;
+  memory[0x3200] = 0x123;
+
+  int result = read_and_execute_instruction();
+  if (result != 1) {
+    printf("Expected return value to be 1, got %d\n", result);
+    pass = 0;
+  }
+
+  if (reg[R_R0] != 0x123) {
+    printf("Expected register 0 to contain %d, got %d\n", 0x123, reg[R_R0]);
+    pass = 0;
+  }
+
+  if (reg[R_COND] != FL_POS) {
+    printf("Expected condition flags to be %d, got %d\n", FL_POS, reg[R_COND]);
+    pass = 0;
+  }
+
+  return pass;
+}
+
+int test_ldr_instr() {
+  int pass = 1;
+
+  uint16_t ldr_instr =
+    ((OP_LDR & 0xf) << 12) |
+    ((R_R0 & 0x7) << 9)    |
+    ((R_R1 & 0x7) << 6)    |
+    0xf;
+
+  memory[0x3000] = ldr_instr;
+  reg[R_R1] = 0x31f1;
+  memory[0x3200] = 0x123;
+
+  int result = read_and_execute_instruction();
+  if (result != 1) {
+    printf("Expected return value to be 1, got %d\n", result);
+    pass = 0;
+  }
+
+  if (reg[R_R0] != 0x123) {
+    printf("Expected register 0 to contain %d, got %d\n", 0x123, reg[R_R0]);
+    pass = 0;
+  }
+
+  if (reg[R_COND] != FL_POS) {
+    printf("Expected condition flags to be %d, got %d\n", FL_POS, reg[R_COND]);
+    pass = 0;
+  }
+
+  return pass;
+}
+
+int test_lea_instr() {
+  int pass = 1;
+
+  uint16_t lea_instr =
+    ((OP_LEA & 0xf) << 12) |
+    ((R_R0 & 0x7) << 9)    |
+    0xff;
+
+  memory[0x3000] = lea_instr;
+
+  int result = read_and_execute_instruction();
+  if (result != 1) {
+    printf("Expected return value to be 1, got %d\n", result);
+    pass = 0;
+  }
+
+  if (reg[R_R0] != 0x3100) {
+    printf("Expected register 0 to contain %d, got %d\n", 0x3100, reg[R_R0]);
+    pass = 0;
+  }
+
+  if (reg[R_COND] != FL_POS) {
+    printf("Expected condition flags to be %d, got %d\n", FL_POS, reg[R_COND]);
+    pass = 0;
+  }
+
+  return pass;
+}
+
+int test_st_instr() {
+  int pass = 1;
+
+  uint16_t st_instr =
+    ((OP_ST & 0xf) << 12) |
+    ((R_R0 & 0x7) << 9)    |
+    0xff;
+
+  memory[0x3000] = st_instr;
+  reg[R_R0] = 0x123;
+
+  int result = read_and_execute_instruction();
+  if (result != 1) {
+    printf("Expected return value to be 1, got %d\n", result);
+    pass = 0;
+  }
+
+  if (memory[0x3100] != 0x123) {
+    printf("Expected memory location %d to contain %d, got %d\n", 0x3100, 0x123, reg[R_R0]);
+    pass = 0;
+  }
+
+  return pass;
+}
+
+int test_sti_instr() {
+  int pass = 1;
+
+  uint16_t sti_instr =
+    ((OP_STI & 0xf) << 12) |
+    ((R_R0 & 0x7) << 9)    |
+    0xff;
+
+  memory[0x3000] = sti_instr;
+  memory[0x3100] = 0x3200;
+  reg[R_R0] = 0x123;
+
+  int result = read_and_execute_instruction();
+  if (result != 1) {
+    printf("Expected return value to be 1, got %d\n", result);
+    pass = 0;
+  }
+
+  if (memory[0x3200] != 0x123) {
+    printf("Expected memory location %d to contain %d, got %d\n", 0x3200, 0x123, reg[R_R0]);
+    pass = 0;
+  }
+
+  return pass;
+}
+
+int test_str_instr() {
+  int pass = 1;
+
+  uint16_t str_instr =
+    ((OP_STR & 0xf) << 12) |
+    ((R_R0 & 0x7) << 9)    |
+    ((R_R1 & 0x7) << 6)    |
+    0xf;
+
+  memory[0x3000] = str_instr;
+  reg[R_R0] = 0x123;
+  reg[R_R1] = 0x31f1;
+
+  int result = read_and_execute_instruction();
+  if (result != 1) {
+    printf("Expected return value to be 1, got %d\n", result);
+    pass = 0;
+  }
+
+  if (memory[0x3200] != 0x123) {
+    printf("Expected memory location %d to contain %d, got %d\n", 0x3200, 0x123, reg[R_R0]);
+    pass = 0;
+  }
+
+  return pass;
+}
+
+int test_trap_getc() {
+  int pass = 1;
+
+  uint16_t trap_getc_instr =
+    ((OP_TRAP & 0xf) << 12) |
+    (TRAP_GETC & 0xff);
+
+  char in_buf[] = {'x'};
+  char out_buf[256];
+  FILE *in = fmemopen(in_buf, sizeof(in_buf), "r");
+  FILE *out = fmemopen(out_buf, sizeof(out_buf), "w");
+
+  int result = execute_trap(trap_getc_instr, in, out);
+  fclose(in);
+  fclose(out);
+
+  if (result != 1) {
+    printf("Expected return value to be 1, got %d\n", result);
+    pass = 0;
+  }
+
+  if (reg[R_R0] != 'x') {
+    printf("Expected register 0 to contain %d, got %d\n", 'x', reg[R_R0]);
+    pass = 0;
+  }
+
+  if (out_buf[0] != 0) {
+    printf("Expected output buffer to contain %d, got %d\n", 0, out_buf[0]);
+    pass = 0;
+  }
+
+  return pass;
+}
+
+int test_trap_out() {
+  int pass = 1;
+
+  uint16_t trap_out_instr =
+    ((OP_TRAP & 0xf) << 12) |
+    (TRAP_OUT & 0xff);
+
+  char in_buf[] = {0};
+  char out_buf[256];
+  FILE *in = fmemopen(in_buf, sizeof(in_buf), "r");
+  FILE *out = fmemopen(out_buf, sizeof(out_buf), "w");
+
+  reg[R_R0] = 'x';
+
+  int result = execute_trap(trap_out_instr, in, out);
+  fclose(in);
+  fclose(out);
+
+  if (result != 1) {
+    printf("Expected return value to be 1, got %d\n", result);
+    pass = 0;
+  }
+
+  if (out_buf[0] != 'x') {
+    printf("Expected output buffer to contain %d, got %d\n", 'x', out_buf[0]);
+    pass = 0;
+  }
+
+  return pass;
+}
+
+int test_trap_puts() {
+  int pass = 1;
+
+  uint16_t trap_puts_instr =
+    ((OP_TRAP & 0xf) << 12) |
+    (TRAP_PUTS & 0xff);
+
+  char in_buf[] = {0};
+  char out_buf[256];
+  FILE *in = fmemopen(in_buf, sizeof(in_buf), "r");
+  FILE *out = fmemopen(out_buf, sizeof(out_buf), "w");
+
+  reg[R_R0] = 0x3100;
+  memory[0x3100] = 'h';
+  memory[0x3101] = 'e';
+  memory[0x3102] = 'y';
+  memory[0x3103] = 0;
+
+  int result = execute_trap(trap_puts_instr, in, out);
+  fclose(in);
+  fclose(out);
+
+  if (result != 1) {
+    printf("Expected return value to be 1, got %d\n", result);
+    pass = 0;
+  }
+
+  if (strncmp(out_buf, "hey", 3) != 0) {
+    printf("Expected output buffer to contain %s, got %s\n", "hey", out_buf);
+    pass = 0;
+  }
+
+  return pass;
+}
+
+int test_trap_in() {
+  int pass = 1;
+
+  uint16_t trap_in_instr =
+    ((OP_TRAP & 0xf) << 12) |
+    (TRAP_IN & 0xff);
+
+  char in_buf[] = {'x'};
+  char out_buf[256];
+  FILE *in = fmemopen(in_buf, sizeof(in_buf), "r");
+  FILE *out = fmemopen(out_buf, sizeof(out_buf), "w");
+
+  int result = execute_trap(trap_in_instr, in, out);
+  fclose(in);
+  fclose(out);
+
+  if (result != 1) {
+    printf("Expected return value to be 1, got %d\n", result);
+    pass = 0;
+  }
+
+  if (reg[R_R0] != 'x') {
+    printf("Expected register 0 to contain %d, got %d\n", 'x', reg[R_R0]);
+  }
+
+  if (strncmp(out_buf, "Enter a character: x", 27) != 0) {
+    printf("Expected output buffer to contain %s, got %s\n", "Enter a character: x", out_buf);
+    pass = 0;
+  }
+
+  return pass;
+}
+
+int test_trap_putsp() {
+  int pass = 1;
+
+  uint16_t trap_putsp_instr =
+    ((OP_TRAP & 0xf) << 12) |
+    (TRAP_PUTSP & 0xff);
+
+  char in_buf[] = {0};
+  char out_buf[256];
+  FILE *in = fmemopen(in_buf, sizeof(in_buf), "r");
+  FILE *out = fmemopen(out_buf, sizeof(out_buf), "w");
+
+  reg[R_R0] = 0x3100;
+  memory[0x3100] = 'h' | ('e' << 8);
+  memory[0x3101] = 'y' | (' ' << 8);
+  memory[0x3102] = 'd' | ('u' << 8);
+  memory[0x3103] = 'd' | ('e' << 8);
+  memory[0x3104] = 0;
+
+  int result = execute_trap(trap_putsp_instr, in, out);
+  fclose(in);
+  fclose(out);
+
+  if (result != 1) {
+    printf("Expected return value to be 1, got %d\n", result);
+    pass = 0;
+  }
+
+  if (strncmp(out_buf, "hey dude", 8) != 0) {
+    printf("Expected output buffer to contain %s, got %s\n", "hey dude", out_buf);
+    pass = 0;
+  }
+
+  return pass;
+}
+
+int test_trap_halt() {
+  int pass = 1;
+
+  uint16_t trap_halt_instr =
+    ((OP_TRAP & 0xf) << 12) |
+    (TRAP_HALT & 0xff);
+
+  char in_buf[] = {0};
+  char out_buf[256];
+  FILE *in = fmemopen(in_buf, sizeof(in_buf), "r");
+  FILE *out = fmemopen(out_buf, sizeof(out_buf), "w");
+
+  int result = execute_trap(trap_halt_instr, in, out);
+  fclose(in);
+  fclose(out);
+
+  if (result != 0) {
+    printf("Expected return value to be 0, got %d\n", result);
+    pass = 0;
+  }
+
+  if (strncmp(out_buf, "HALT", 8) != 0) {
+    printf("Expected output buffer to contain %s, got %s\n", "hey dude", out_buf);
+    pass = 0;
+  }
+
+  return pass;
+}
+
 int run_tests() {
   int (*tests[])(void) = {
     test_add_instr_1,
@@ -814,15 +1219,32 @@ int run_tests() {
     test_jmp_instr,
     test_jsr_instr_1,
     test_jsr_instr_2,
+    test_ld_instr,
+    test_ldi_instr,
+    test_ldr_instr,
+    test_lea_instr,
+    test_st_instr,
+    test_sti_instr,
+    test_str_instr,
+    test_trap_getc,
+    test_trap_out,
+    test_trap_puts,
+    test_trap_in,
+    test_trap_putsp,
     NULL
   };
 
   int i, result, ok = 1;
   for (i = 0; tests[i] != NULL; i++) {
+    /* clear memory */
+    memset(reg, 0, sizeof(reg));
+    memset(memory, 0, sizeof(memory));
+
     /* set the PC to starting position */
     /* 0x3000 is the default */
     enum { PC_START = 0x3000 };
     reg[R_PC] = PC_START;
+
 
     result = tests[i]();
     if (!result) {
